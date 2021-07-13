@@ -14,7 +14,18 @@
 
 #if (!defined _WIN32 && !defined __WIN32__ && !defined __CYGWIN__)
   #include <signal.h>
+  typedef int SOCKET;
+  #define INVALID_SOCKET -1
 #endif
+
+#if defined(SOCK_CLOEXEC) && !defined(__rtems__) && !defined(vxWorks)
+/* with glibc, SOCK_CLOEXEC does not expand to a simple constant */
+#  define HAVE_SOCK_CLOEXEC
+#else
+#  undef SOCK_CLOEXEC
+#  define SOCK_CLOEXEC (0)
+#endif
+
 
 #ifdef USE_WINSOCK2
 #include <winsock2.h>
@@ -26,6 +37,7 @@
 #include <arpa/inet.h>   /* htons, ntohs .. */
 #include <netdb.h>
 #include <sys/select.h>
+#include <fcntl.h>
 #endif
 
 #ifdef START_WINSOCK2
@@ -45,6 +57,16 @@
 /*****************************************************************************/
 
 /* typedefs */
+
+
+typedef union osiSockAddr46 {
+  struct sockaddr          sa;  /* old struct, too short to hold IPv6 addresses */
+  struct sockaddr_storage  ss;  /* new struct. long enough for everything */
+  struct sockaddr_in       in;  /* Internet, IPv4 */
+  struct sockaddr_in6      in6; /* INternet, IPv6 */
+} osiSockAddr46;
+
+
 typedef struct client_con_type {
   size_t        len_used;
   unsigned char *buffer;
@@ -96,6 +118,93 @@ static client_con_type client_cons[NUM_CLIENT_CONS];
     pos += 8;\
   }\
 }\
+
+
+#define errlogPrintf printf
+
+void epicsSocketConvertErrnoToString (char *pBuf, size_t bufSize)
+{
+   strerror_r(errno, pBuf, bufSize);
+}
+
+/*****************************************************************************/
+SOCKET epicsSocketCreate(int domain, int type, int protocol)
+{
+    SOCKET sock = socket ( domain, type | SOCK_CLOEXEC, protocol );
+    if ( sock < 0 ) {
+        sock = INVALID_SOCKET;
+    }
+    else {
+        int status = fcntl ( sock, F_SETFD, FD_CLOEXEC );
+        if ( status < 0 ) {
+            char buf [ 64 ];
+            epicsSocketConvertErrnoToString (  buf, sizeof ( buf ) );
+            errlogPrintf (
+                "epicsSocketCreate: failed to "
+                "fcntl FD_CLOEXEC because \"%s\"\n",
+                buf );
+            close ( sock );
+            sock = INVALID_SOCKET;
+        }
+    }
+    return sock;
+}
+
+int epicsSocketDestroy (SOCKET sock)
+{
+  return close(sock);
+}
+
+
+/*****************************************************************************/
+SOCKET epicsSocketCreateBind(int domain, int type, int protocol,
+                             unsigned short port, int flags)
+{
+    osiSockAddr46 addr;
+    int status;
+    SOCKET sock = socket ( domain, type | SOCK_CLOEXEC, protocol );
+    if ( sock < 0 ) {
+      return INVALID_SOCKET;
+    }  else {
+      status = fcntl ( sock, F_SETFD, FD_CLOEXEC );
+      if ( status < 0 ) {
+        char buf [ 64 ];
+        epicsSocketConvertErrnoToString (  buf, sizeof ( buf ) );
+        errlogPrintf (
+                      "epicsSocketCreate: failed to "
+                      "fcntl FD_CLOEXEC because \"%s\"\n",
+                      buf );
+        epicsSocketDestroy (sock);
+        return INVALID_SOCKET;
+      }
+    }
+    memset(&addr, 0 , sizeof (addr) );
+    if (domain == AF_INET) {
+      addr.in.sin_family = AF_INET;
+      addr.in.sin_addr.s_addr = htonl (INADDR_ANY);
+      addr.in.sin_port = htons ( port );
+      status = bind (sock, &addr.sa, sizeof (addr.in));
+    } else if (domain == AF_INET6) {
+      addr.in6.sin6_family = AF_INET;
+      addr.in6.sin6_port = htons(port);
+      status = bind (sock, &addr.sa, sizeof (addr.in6));
+    } else {
+      errlogPrintf ("epicsSocketCreate: invalid domain %d\n",
+                    domain);
+      epicsSocketDestroy (sock);
+      return INVALID_SOCKET;
+    }
+    if (status < 0) {
+      char sockErrBuf[64];
+      epicsSocketConvertErrnoToString (sockErrBuf, sizeof (sockErrBuf));
+      errlogPrintf ("epicsSocketCreate: failed to "
+                    "bind because \"%s\"\n",
+                    sockErrBuf);
+      epicsSocketDestroy (sock);
+      return INVALID_SOCKET;
+    }
+    return sock;
+}
 
 
 /*****************************************************************************/
@@ -525,8 +634,11 @@ void socket_loop(void)
   int stop_and_exit = 0;
 
   init_client_cons();
-
+#if XXX
   listen_socket = get_listen_socket("5000");
+#else
+  listen_socket = epicsSocketCreateBind(AF_INET, SOCK_STREAM, IPPROTO_TCP, 5000, 0);
+#endif
   if (listen_socket < 0)
   {
     LOGERR_ERRNO("no listening socket for ASCII!\n");
