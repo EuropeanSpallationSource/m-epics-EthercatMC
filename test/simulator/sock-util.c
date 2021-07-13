@@ -262,54 +262,32 @@ unsigned ipAddrToDottedIP64 (
                               ntohs ( paddr->in.sin_port ) );
     } else if (paddr->in6.sin6_family == AF_INET6) {
       if (IN6_IS_ADDR_V4MAPPED(&paddr->in6.sin6_addr)) {
-#ifdef darwin
         status = epicsSnprintf (pBuf, bufSize, "%u.%u.%u.%u:%hu",
-                                paddr->in6.sin6_addr.__u6_addr.__u6_addr8[12],
-                                paddr->in6.sin6_addr.__u6_addr.__u6_addr8[13],
-                                paddr->in6.sin6_addr.__u6_addr.__u6_addr8[14],
-                                paddr->in6.sin6_addr.__u6_addr.__u6_addr8[15],
+                                paddr->in6.sin6_addr.s6_addr[12],
+                                paddr->in6.sin6_addr.s6_addr[13],
+                                paddr->in6.sin6_addr.s6_addr[14],
+                                paddr->in6.sin6_addr.s6_addr[15],
                                 ntohs ( paddr->in6.sin6_port ) );
-#elif defined(__linux__)
-        status = epicsSnprintf (pBuf, bufSize, "%u.%u.%u.%u:%hu",
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[12],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[13],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[14],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[15],
-                                ntohs ( paddr->in6.sin6_port ) );
-#endif
       } else {
-#ifdef darwin
-        status = epicsSnprintf (pBuf, bufSize, "[%X:%X:%X:%X:%X:%X:%X:%X]:%hu",
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[0]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[1]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[2]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[3]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[4]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[5]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[6]),
-                                ntohs(paddr->in6.sin6_addr.__u6_addr.__u6_addr16[7]),
-                                ntohs ( paddr->in6.sin6_port ) );
-#elif defined(__linux__)
         status = epicsSnprintf (pBuf, bufSize,
                                 "[%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X]:%hu",
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[0],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[1],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[2],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[3],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[4],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[5],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[6],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[7],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[8],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[9],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[10],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[11],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[12],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[13],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[14],
-                                paddr->in6.sin6_addr.__in6_u.__u6_addr8[15],
+                                paddr->in6.sin6_addr.s6_addr[0],
+                                paddr->in6.sin6_addr.s6_addr[1],
+                                paddr->in6.sin6_addr.s6_addr[2],
+                                paddr->in6.sin6_addr.s6_addr[3],
+                                paddr->in6.sin6_addr.s6_addr[4],
+                                paddr->in6.sin6_addr.s6_addr[5],
+                                paddr->in6.sin6_addr.s6_addr[6],
+                                paddr->in6.sin6_addr.s6_addr[7],
+                                paddr->in6.sin6_addr.s6_addr[8],
+                                paddr->in6.sin6_addr.s6_addr[9],
+                                paddr->in6.sin6_addr.s6_addr[10],
+                                paddr->in6.sin6_addr.s6_addr[11],
+                                paddr->in6.sin6_addr.s6_addr[12],
+                                paddr->in6.sin6_addr.s6_addr[13],
+                                paddr->in6.sin6_addr.s6_addr[14],
+                                paddr->in6.sin6_addr.s6_addr[15],
                                 ntohs ( paddr->in6.sin6_port ) );
-#endif
       }
     }
     if ( status > 0 ) {
