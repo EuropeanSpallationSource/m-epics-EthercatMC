@@ -12,12 +12,6 @@
 #include "sock-util.h"
 #include "sock-ads.h"
 
-#if (!defined _WIN32 && !defined __WIN32__ && !defined __CYGWIN__)
-  #include <signal.h>
-  typedef int SOCKET;
-  #define INVALID_SOCKET -1
-#endif
-
 #define EPICSSOCKETENABLEADDRESSREUSE_FLAG (1)
 
 #if defined(SOCK_CLOEXEC) && !defined(__rtems__) && !defined(vxWorks)
@@ -40,6 +34,13 @@
 #include <netdb.h>
 #include <sys/select.h>
 #include <fcntl.h>
+#endif
+
+#if (!defined _WIN32 && !defined __WIN32__ && !defined __CYGWIN__)
+  #include <signal.h>
+  typedef int SOCKET;
+  #define INVALID_SOCKET -1
+  typedef socklen_t osiSocklen_t;
 #endif
 
 #ifdef START_WINSOCK2
@@ -123,6 +124,7 @@ static client_con_type client_cons[NUM_CLIENT_CONS];
 
 
 #define errlogPrintf printf
+#define epicsSnprintf snprintf
 
 void epicsSocketConvertErrnoToString (char *pBuf, size_t bufSize)
 {
@@ -234,7 +236,69 @@ SOCKET epicsSocketCreateBind(int domain, int type, int protocol,
     return sock;
 }
 
+unsigned ipAddrToDottedIP64 (
+    const osiSockAddr46 *paddr, char *pBuf, unsigned bufSize )
+{
+    static const char * pErrStr = "<IPA>";
+    unsigned strLen;
+    int status = -1;
 
+    if ( bufSize == 0u ) {
+        return 0u;
+    }
+    if (paddr->in.sin_family == AF_INET) {
+      unsigned addr = ntohl ( paddr->in.sin_addr.s_addr );
+      /*
+       * inet_ntoa() isnt used because it isnt thread safe
+       * (and the replacements are not standardized)
+       */
+      status = epicsSnprintf (
+                              pBuf, bufSize, "%u.%u.%u.%u:%hu",
+                              (addr >> 24) & 0xFF,
+                              (addr >> 16) & 0xFF,
+                              (addr >> 8) & 0xFF,
+                              (addr) & 0xFF,
+                              ntohs ( paddr->in.sin_port ) );
+    } else if (paddr->in6.sin6_family == AF_INET6) {
+      status = epicsSnprintf (
+                              pBuf, bufSize, "[%X%02X:%X%02X:%X%02X:%X%02X:%X%02X:%X%02X:%X%02X:%X%02X]:%hu",
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[0],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[1],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[2],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[3],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[4],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[5],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[6],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[7],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[8],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[9],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[10],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[11],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[12],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[13],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[14],
+                              paddr->in6.sin6_addr.__u6_addr.__u6_addr8[15],
+                              ntohs ( paddr->in6.sin6_port ) );
+    }
+    if ( status > 0 ) {
+      strLen = ( unsigned ) status;
+      if ( strLen < bufSize - 1 ) {
+        return strLen;
+      }
+    }
+    strLen = strlen ( pErrStr );
+    if ( strLen < bufSize ) {
+        strcpy ( pBuf, pErrStr );
+        return strLen;
+    }
+    else {
+        strncpy ( pBuf, pErrStr, bufSize );
+        pBuf[bufSize-1] = '\0';
+        return bufSize - 1u;
+    }
+}
+
+/*****************************************************************************/
 /*****************************************************************************/
 void init_client_cons(void)
 {
@@ -579,6 +643,22 @@ void socket_loop_with_select(void)
               int is_listen = 0;
               int accepted_socket;
               accepted_socket = accept(client_cons[i].fd, NULL, NULL);
+              {
+                osiSockAddr46 addr;
+                char buf[64];
+                osiSocklen_t saddr_length = sizeof (addr);
+                int status;
+                status = getsockname ( accepted_socket, &addr.sa, &saddr_length );
+                if ( status < 0 ) {
+                  char sockErrBuf[64];
+                  epicsSocketConvertErrnoToString (sockErrBuf, sizeof ( sockErrBuf ) );
+                  errlogPrintf ( "listen: getsockname () error was \"%s\"\n", sockErrBuf );
+                } else {
+                  ipAddrToDottedIP64(&addr, buf, sizeof(buf));
+                  LOGINFO3("%s/%s:%d accepted_socket remote=%s\n",
+                           __FILE__, __FUNCTION__, __LINE__, buf);
+                }
+              }
               LOGINFO3("%s/%s:%d accepted_socket=%d\n",
                        __FILE__, __FUNCTION__, __LINE__, accepted_socket);
               add_client_con(accepted_socket, is_listen, client_cons[i].is_ADS);
