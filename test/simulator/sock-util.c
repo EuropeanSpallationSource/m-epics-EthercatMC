@@ -741,7 +741,7 @@ void socket_loop(void)
   int stop_and_exit = 0;
 
   init_client_cons();
-#if XXX
+#if XXX_OLD_CODE
   listen_socket = get_listen_socket("5000");
 #else
   {
@@ -750,7 +750,11 @@ void socket_loop(void)
                                           port,
                                           EPICSSOCKETENABLEADDRESSREUSE_FLAG);
     if (listen_socket >= 0) {
-      LOGINFO("listening on port %d\n", port);
+      LOGINFO("listening2 on port %d\n", port);
+    }
+    if (listen(listen_socket, 1) < 0) {
+      LOGERR_ERRNO ("listen() failed\n");
+      exit(3);
     }
   }
 #endif
@@ -761,7 +765,23 @@ void socket_loop(void)
   }
   add_client_con(listen_socket, is_listen, is_ADS);
 
+#if XXXX_OLD_CODE
   listen_socket = get_listen_socket("48898");
+#else
+  {
+    unsigned short port = 48898;
+    listen_socket = epicsSocketCreateBind(AF_INET6, SOCK_STREAM, IPPROTO_TCP,
+                                          port,
+                                          EPICSSOCKETENABLEADDRESSREUSE_FLAG);
+    if (listen(listen_socket, 1) < 0) {
+      LOGERR_ERRNO ("listen() failed\n");
+      exit(3);
+    }
+    if (listen_socket >= 0) {
+      LOGINFO("listening2 on port %d\n", port);
+    }
+  }
+#endif
   if (listen_socket < 0)
   {
     LOGERR_ERRNO("no listening socket for ADS!\n");
