@@ -18,6 +18,8 @@
   #define INVALID_SOCKET -1
 #endif
 
+#define EPICSSOCKETENABLEADDRESSREUSE_FLAG (1)
+
 #if defined(SOCK_CLOEXEC) && !defined(__rtems__) && !defined(vxWorks)
 /* with glibc, SOCK_CLOEXEC does not expand to a simple constant */
 #  define HAVE_SOCK_CLOEXEC
@@ -155,6 +157,28 @@ int epicsSocketDestroy (SOCKET sock)
   return close(sock);
 }
 
+void  epicsSocketEnableAddressReuseDuringTimeWaitState ( SOCKET s )
+{
+#ifdef _WIN32
+    /*
+     * Note: WINSOCK appears to assign a different functionality for
+     * SO_REUSEADDR compared to other OS. With WINSOCK SO_REUSEADDR indicates
+     * that simultaneously servers can bind to the same TCP port on the same host!
+     * Also, servers are always enabled to reuse a port immediately after
+     * they exit ( even if SO_REUSEADDR isnt set ).
+     */
+#else
+    int yes = true;
+    int status;
+    status = setsockopt ( s, SOL_SOCKET, SO_REUSEADDR,
+        (char *) & yes, sizeof ( yes ) );
+    if ( status < 0 ) {
+        errlogPrintf (
+            "epicsSocketEnableAddressReuseDuringTimeWaitState: "
+            "unable to set SO_REUSEADDR?\n");
+    }
+#endif
+}
 
 /*****************************************************************************/
 SOCKET epicsSocketCreateBind(int domain, int type, int protocol,
@@ -178,14 +202,18 @@ SOCKET epicsSocketCreateBind(int domain, int type, int protocol,
         return INVALID_SOCKET;
       }
     }
+    if (flags & EPICSSOCKETENABLEADDRESSREUSE_FLAG) {
+      epicsSocketEnableAddressReuseDuringTimeWaitState(sock);
+    }
+
     memset(&addr, 0 , sizeof (addr) );
     if (domain == AF_INET) {
-      addr.in.sin_family = AF_INET;
+      addr.in.sin_family = domain;
       addr.in.sin_addr.s_addr = htonl (INADDR_ANY);
       addr.in.sin_port = htons ( port );
       status = bind (sock, &addr.sa, sizeof (addr.in));
     } else if (domain == AF_INET6) {
-      addr.in6.sin6_family = AF_INET;
+      addr.in6.sin6_family = domain;
       addr.in6.sin6_port = htons(port);
       status = bind (sock, &addr.sa, sizeof (addr.in6));
     } else {
@@ -637,7 +665,15 @@ void socket_loop(void)
 #if XXX
   listen_socket = get_listen_socket("5000");
 #else
-  listen_socket = epicsSocketCreateBind(AF_INET, SOCK_STREAM, IPPROTO_TCP, 5000, 0);
+  {
+    unsigned short port = 5000;
+    listen_socket = epicsSocketCreateBind(AF_INET6, SOCK_STREAM, IPPROTO_TCP,
+                                          port,
+                                          EPICSSOCKETENABLEADDRESSREUSE_FLAG);
+    if (listen_socket >= 0) {
+      LOGINFO("listening on port %d\n", port);
+    }
+  }
 #endif
   if (listen_socket < 0)
   {
